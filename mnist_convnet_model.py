@@ -24,6 +24,7 @@ flags.DEFINE_float('learning_rate', 3e-3, 'Learning rate')
 flags.DEFINE_integer('num_classes', 10, 'Number of classes (0-9 digits)')
 flags.DEFINE_integer('num_input', 784, 'MNIST data input (img shape: 28*28)')
 flags.DEFINE_float('dropout', 0.75, 'Dropout, probability to keep units')
+flags.DEFINE_integer('display_step', 100, 'Display step')
 
 FLAGS = flags.FLAGS
 mnist = input_data.read_data_sets(FLAGS.data_dir, one_hot=True)
@@ -41,14 +42,13 @@ def init_graph_inputs():
 
     return x, y, dropout_prob
 
-# Define utility functions
-# Weight and biases
+# Define utility functions weight and biases
 def weight_variable():
     weights = {
                   'wc1': tf.Variable(tf.random_normal([5, 5, 1, 32])),
-                  'wc2': tf.Variable([5, 5, 32, 64]),
-                  'wd1': tf.Variable([7*7*64, 1024]),
-                  'out': tf.Variable([1024, FLAGS.num_classes])
+                  'wc2': tf.Variable(tf.random_normal([5, 5, 32, 64])),
+                  'wd1': tf.Variable(tf.random_normal([7*7*64, 1024])),
+                  'out': tf.Variable(tf.random_normal([1024, FLAGS.num_classes]))
               }
 
     return weights
@@ -87,13 +87,13 @@ def conv_net(x, weights, biases, dropout):
     conv1 = maxpool2d(conv1, k=2)
 
     # Convolution layer #2
-    conv2 = conv2d(x, weights['wc2'], biases['bc2'])
+    conv2 = conv2d(conv1, weights['wc2'], biases['bc2'])
     # Max Pooling (down-sampling) #2
     conv2 = maxpool2d(conv2, k=2)
 
     # Fully connected layer
     # Reshape conv2 output to fit fully connected layer input
-    fc1 = tf.shape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
+    fc1 = tf.reshape(conv2, [-1, weights['wd1'].get_shape().as_list()[0]])
     fc1 = tf.add(tf.matmul(fc1, weights['wd1']), biases['bd1'])
     fc1 = tf.nn.relu(fc1)
 
@@ -105,35 +105,44 @@ def conv_net(x, weights, biases, dropout):
 
     return out
 
-def loss_optimizer(pred):
+def loss_optimizer(y, pred):
+    #print(y.get_shape())
     cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
 
     optimizer = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate).minimize(cost)
+
+    return cost, optimizer
 
 def evaluate_model(y, pred):
     correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 
-def construct_model():
-    x, y, keep_prob  = init_graph_inputs()
-    weights = weight_variable()
-    biases = bias_variable()
-    tf.get_variable(x)
-    exit()
+    return correct_pred, accuracy
+
+def construct_model(x, weights, biases, keep_prob):
     pred = conv_net(x, weights, biases, keep_prob)
 
-    loss_optimizer(pred)
-
-    evaluate_model(y, pred)
+    return pred
 
 def train():
-    construct_model()
+    x, y, keep_prob = init_graph_inputs()
+    weights = weight_variable()
+    biases = bias_variable()
+
+    pred = construct_model(x, weights, biases, keep_prob)
+
+    #y = tf.Print(y, [y], message="This is a: ")
+    #pred.eval()
+    #exit()
+
+    cost, optimizer = loss_optimizer(y, pred)
+
+    correct_pred, accuracy = evaluate_model(y, pred)
 
     init = tf.global_variables_initializer()
 
     with tf.Session() as sess:
         sess.run(init)
-        step = 1
 
         # Keep training until reach max iterations
         for i in tqdm(xrange(1, FLAGS.num_iters)):
@@ -144,13 +153,13 @@ def train():
                                            y: batch_y,
                                            keep_prob: FLAGS.dropout})
 
-            if i % display_step == 0:
+            if i % FLAGS.display_step == 0:
                 # Calculate batch loss and accuracy
                 loss, acc = sess.run([cost, accuracy], feed_dict={x: batch_x,
                                                                   y: batch_y,
                                                                   keep_prob: 1.})
-                print("Iter " + str(i * batch_size) + ", Minibatch Loss= " + \
-                      "{.6f}".format(loss) + ", Training Accuracy= " + \
+                print("Iter " + str(i * FLAGS.batch_size) + ", Minibatch Loss= " + \
+                      "{:.6f}".format(loss) + ", Training Accuracy= " + \
                       "{:.5f}".format(acc))
 
             if i * FLAGS.batch_size >= FLAGS.num_iters:
